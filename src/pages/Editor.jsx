@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Header from '../components/Header'
-import Sidebar from '../components/sidebar'
+import Sidebar from '../components/Sidebar'
 import { Button } from '../components/ui/button'
 import { Menu } from 'lucide-react'
 
