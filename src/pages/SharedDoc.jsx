@@ -121,7 +121,7 @@ function SharedDoc() {
                     readOnly
                 />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 ml-2 md:gap-4">
                 <Button
                   variant="secondary"
                   size="icon"
