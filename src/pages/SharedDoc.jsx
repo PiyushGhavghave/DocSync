@@ -6,7 +6,7 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { db } from '@/Firebase/firebase-config'
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
-import { throttle } from 'lodash'
+import { debounce } from 'lodash'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Github } from 'lucide-react';
 
@@ -35,7 +35,7 @@ function SharedDoc() {
   const isLocalChange = useRef(false)
   const docRef = id ? doc(db,"documents", id): null ;
 
-  const saveContent = throttle( async () => {
+  const saveContent = debounce( async () => {
     if(quillRef.current && docRef && isLocalChange.current){
       const content = quillRef.current.getEditor().getContents();
       try{
@@ -47,7 +47,7 @@ function SharedDoc() {
       isLocalChange.current = false;
     }
 
-  }, 500)
+  }, 200)
 
   useEffect(() => {
     if (!docRef || !quillRef.current) return;
@@ -92,7 +92,10 @@ function SharedDoc() {
 
         setIsEditing(true)
 
-        saveContent()
+        const isContentChanged = delta.ops.some((op) => op.insert || op.delete);
+        if(isContentChanged){
+          saveContent()
+        }
 
         //Reset editing state after 5 sec of inactivity
         setTimeout(() => {

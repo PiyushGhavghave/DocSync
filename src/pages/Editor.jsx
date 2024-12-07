@@ -10,7 +10,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import {toggleSideBar} from '../features/folderSlice/folderslice'
 import { db } from '@/Firebase/firebase-config'
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
-import { throttle } from 'lodash'
+import { debounce } from 'lodash'
 
 const modules = {
   toolbar: [
@@ -37,7 +37,7 @@ function Editor() {
   const isLocalChange = useRef(false)
   const docRef = selectedDocument? doc(db,"documents",selectedDocument.id): null ;
 
-  const saveContent = throttle( async () => {
+  const saveContent = debounce( async () => {
     if(quillRef.current && docRef && isLocalChange.current){
       const content = quillRef.current.getEditor().getContents();
       try{
@@ -49,7 +49,7 @@ function Editor() {
       isLocalChange.current = false;
     }
 
-  }, 500)
+  }, 200)
 
   useEffect(() => {
     if (!selectedDocument || !docRef || !quillRef.current) return;
@@ -91,7 +91,10 @@ function Editor() {
 
         setIsEditing(true)
 
-        saveContent()
+        const isContentChanged = delta.ops.some((op) => op.insert || op.delete);
+        if(isContentChanged){
+          saveContent()
+        }
 
         //Reset editing state after 5 sec of inactivity
         setTimeout(() => {
