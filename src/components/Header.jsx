@@ -59,7 +59,7 @@ export default function Header() {
           variant="secondary"
           size="icon"
           className="inline-flex"
-          onClick={() => window.open('https://github.com/PiyushGhavghave', '_blank')}
+          onClick={() => window.open('https://github.com/PiyushGhavghave/DocSync', '_blank')}
           aria-label="GitHub"
         >
           <Github className="h-5 w-5" />
