@@ -6,7 +6,7 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { db } from '@/Firebase/firebase-config'
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
-import { debounce } from 'lodash'
+import { throttle } from 'lodash'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Github } from 'lucide-react';
 
@@ -35,7 +35,7 @@ function SharedDoc() {
   const isLocalChange = useRef(false)
   const docRef = id ? doc(db,"documents", id): null ;
 
-  const saveContent = debounce( async () => {
+  const saveContent = throttle( async () => {
     if(quillRef.current && docRef && isLocalChange.current){
       const content = quillRef.current.getEditor().getContents();
       try{
@@ -47,14 +47,16 @@ function SharedDoc() {
       isLocalChange.current = false;
     }
 
-  }, 200)
+  }, 500)
+
+  const isEditingTimeout = useRef(null);
 
   useEffect(() => {
     if (!docRef || !quillRef.current) return;
     
     const editor = quillRef.current.getEditor()
 
-    //-------------- Load initial data from firestore
+    //-------------- Load initial content
     getDoc(docRef)
     .then((snapshot) => {
       if(snapshot.exists() && snapshot.data()){
@@ -70,13 +72,14 @@ function SharedDoc() {
       console.error("Error fetching document content", err);
     })
 
-    //-------------- Listen to realtime changes and update locally
+    //-------------- Real-time changes listener
     const unSubscribe = onSnapshot(docRef, (snapshot) => {
       if(snapshot.exists()){
         const newContent = snapshot.data().content;
         setFilename(snapshot.data().name);
 
-        if(!isEditing){
+        // Avoid overwriting user input during editing
+        if(!isEditing && !isLocalChange.current){
           const currentCursorPosition = editor.getSelection()?.index || 0;
 
           editor.setContents(newContent, "silent");
@@ -86,29 +89,38 @@ function SharedDoc() {
     })
     
     //-------------- Listen to local changes and save it to firestore
-    editor.on("text-change", (delta, oldDelta, source) => {
-      if(source === "user"){
+    const handleTextChange = (delta, oldDelta, source) => {
+      if (source === "user") {
         isLocalChange.current = true;
-
-        setIsEditing(true)
-
-        const isContentChanged = delta.ops.some((op) => op.insert || op.delete);
-        if(isContentChanged){
-          saveContent()
+  
+        setIsEditing(true);
+  
+        saveContent();
+  
+        // Clear any existing timeout before setting
+        if (isEditingTimeout.current) {
+          clearTimeout(isEditingTimeout.current);
         }
-
-        //Reset editing state after 5 sec of inactivity
-        setTimeout(() => {
-          setIsEditing(false)
+  
+        // Reset editing state after 5 seconds of inactivity
+        isEditingTimeout.current = setTimeout(() => {
+          setIsEditing(false);
         }, 5000);
       }
-    })
+    };
+    
+    editor.on("text-change", handleTextChange);
 
+    // cleanup
     return () => {
       unSubscribe()
-      editor.off("text-change")
-    }
+      editor.off("text-change", handleTextChange);
 
+      // Clear timeout on unmount
+      if (isEditingTimeout.current) {
+        clearTimeout(isEditingTimeout.current);
+      }
+    };
   },[])
 
 
