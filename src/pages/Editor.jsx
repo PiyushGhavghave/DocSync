@@ -10,7 +10,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import {toggleSideBar} from '../features/folderSlice/folderslice'
 import { db } from '@/Firebase/firebase-config'
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
-import { debounce } from 'lodash'
+import { throttle } from 'lodash'
 
 const modules = {
   toolbar: [
@@ -37,7 +37,7 @@ function Editor() {
   const isLocalChange = useRef(false)
   const docRef = selectedDocument? doc(db,"documents",selectedDocument.id): null ;
 
-  const saveContent = debounce( async () => {
+  const saveContent = throttle( async () => {
     if(quillRef.current && docRef && isLocalChange.current){
       const content = quillRef.current.getEditor().getContents();
       try{
@@ -49,66 +49,78 @@ function Editor() {
       isLocalChange.current = false;
     }
 
-  }, 200)
+  }, 500)
 
-  useEffect(() => {
-    if (!selectedDocument || !docRef || !quillRef.current) return;
-    
-    const editor = quillRef.current.getEditor()
+const isEditingTimeout = useRef(null);
 
-    //-------------- Load initial data from firestore
-    getDoc(docRef)
+useEffect(() => {
+  if (!selectedDocument || !docRef || !quillRef.current) return;
+
+  const editor = quillRef.current.getEditor();
+
+  // ------------- Load initial content
+  getDoc(docRef)
     .then((snapshot) => {
-      if(snapshot.exists() && snapshot.data().content){
-        editor.setContents(snapshot.data().content)
-      }
-      else{
-        console.log("No document or content found... start with empty document")
+      if (snapshot.exists() && snapshot.data().content) {
+        editor.setContents(snapshot.data().content);
+      } 
+      else {
+        console.log("No document or content found... starting with an empty document");
       }
     })
     .catch((err) => {
-      console.error("Error fetching document content", err);
-    })
+      console.error("Error fetching document content:", err);
+    });
 
-    //-------------- Listen to realtime changes and update locally
-    const unSubscribe = onSnapshot(docRef, (snapshot) => {
-      if(snapshot.exists()){
-        const newContent = snapshot.data().content;
+  // -------------- Real-time changes listener
+  const unSubscribe = onSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const newContent = snapshot.data().content;
 
-        if(!isEditing){
-          const currentCursorPosition = editor.getSelection()?.index || 0;
+      // Avoid overwriting user input during editing
+      if (!isEditing && !isLocalChange.current) {
+        const currentCursorPosition = editor.getSelection()?.index || 0;
 
-          editor.setContents(newContent, "silent");
-          editor.setSelection(currentCursorPosition);
-        }
+        editor.setContents(newContent, "silent");
+        editor.setSelection(currentCursorPosition);
       }
-    })
-    
-    //-------------- Listen to local changes and save it to firestore
-    editor.on("text-change", (delta, oldDelta, source) => {
-      if(source === "user"){
-        isLocalChange.current = true;
-
-        setIsEditing(true)
-
-        const isContentChanged = delta.ops.some((op) => op.insert || op.delete);
-        if(isContentChanged){
-          saveContent()
-        }
-
-        //Reset editing state after 5 sec of inactivity
-        setTimeout(() => {
-          setIsEditing(false)
-        }, 5000);
-      }
-    })
-
-    return () => {
-      unSubscribe()
-      editor.off("text-change")
     }
+  });
 
-  },[selectedDocument])
+  //-------------- Listen to local changes and save it to firestore
+  const handleTextChange = (delta, oldDelta, source) => {
+    if (source === "user") {
+      isLocalChange.current = true;
+
+      setIsEditing(true);
+
+      saveContent();
+
+      // Clear any existing timeout before setting
+      if (isEditingTimeout.current) {
+        clearTimeout(isEditingTimeout.current);
+      }
+
+      // Reset editing state after 5 seconds of inactivity
+      isEditingTimeout.current = setTimeout(() => {
+        setIsEditing(false);
+      }, 5000);
+    }
+  };
+
+  editor.on("text-change", handleTextChange);
+
+  // Cleanup
+  return () => {
+    unSubscribe();
+    editor.off("text-change", handleTextChange);
+
+    // Clear timeout on unmount
+    if (isEditingTimeout.current) {
+      clearTimeout(isEditingTimeout.current);
+    }
+  };
+}, [selectedDocument]);
 
 
   return (
